@@ -1,0 +1,18 @@
+Things TODO for Next Releases:
+
+
+* TOR support.
+
+* Verbose mode with debug messages and HTTP header print-outs.
+
+* Support proxies with authentication requirements.
+
+* Single command mode to execute a single command and exit, improving scripting capabilities.
+
+* Dynamically change Cookie names and delimiters to enhance the stealth behaviour.
+
+* Logging features.
+
+* Command history per terminal.
+
+* Cluster mode.
