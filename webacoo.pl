@@ -15,7 +15,7 @@ my @phpsf = ("system", "shell_exec", "exec", "passthru", "popen");
 
 # Setup
 $WEBACOO{name} = "webacoo.pl";
-$WEBACOO{version} = '0.1';
+$WEBACOO{version} = '0.1.1';
 $WEBACOO{description} = 'Web Backdoor Cookie Script-Kit';
 $WEBACOO{author} = 'Anestis Bechtsoudis';
 $WEBACOO{email} = 'anestis@bechtsoudis.com';
@@ -254,6 +254,14 @@ sub cmd_request
 
     # Close socket
     close($sock);
+
+    # Check for HTTP 4xx error status codes
+    if($output =~ m/^HTTP\/1\.[0,1].+4\d{2}.+\n/)
+    {
+	print "\n[!] 4xx error server response.\n";
+	print "Terminal closed.\n";
+	exit ;
+    }
 
     # Locate cookie data
     my $start = index($output,$WEBACOO{delim})+length($WEBACOO{delim});
