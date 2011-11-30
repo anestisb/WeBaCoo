@@ -1,0 +1,8 @@
+Version 0.1.1 [30 November 2011]
+
++ Added 4xx HTTP status error code handling
+
+
+Version 0.1 [29 November 2011]
+
++ Initial release
