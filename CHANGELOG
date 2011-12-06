@@ -1,6 +1,14 @@
+Version 0.1.2 [6 December 2011]
+
++ Add verbose support with 3 levels to print out requests/responses
+  HTTP headers or/and data.
++ Add support for HTTP proxies with basic authentication.
++ Fix minor bug at output buffer.
+
+
 Version 0.1.1 [30 November 2011]
 
-+ Added 4xx HTTP status error code handling
++ Add 4xx HTTP status error code handling.
 
 
 Version 0.1 [29 November 2011]
