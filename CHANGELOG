@@ -1,4 +1,5 @@
 Version 0.1.3 [13 December 2011]
+
 + Protect base64 decoder function in backdoor code.
 + Fix URI escaped character bug.
 + Fix server's response empty HTTP data bug.
