@@ -1,3 +1,11 @@
+Version 0.1.4 [17 December 2011]
+
++ Insert dummy spaces at base64 obfuscated code, to bypass
+  statistical detection methdos.
++ Added initial user ID print info.
++ Added check for disabled PHP system functions.
+
+
 Version 0.1.3 [13 December 2011]
 
 + Protect base64 decoder function in backdoor code.
