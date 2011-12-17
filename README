@@ -21,6 +21,10 @@ License
 =======
 Any modifications, changes, or alterations to this application is acceptable, however, any public releases utilizing this code must be approved by its creator. Check the LICENSE file for more information.
 
+Requirements
+============
+* liburi-perl
+
 Usage
 =====
 webacoo.pl [options]
