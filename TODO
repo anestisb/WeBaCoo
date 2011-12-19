@@ -1,14 +1,12 @@
 Things TODO for Next Releases:
 
 
-* TOR support.
-
 * Single command mode to execute a single command and exit, improving scripting capabilities.
-
-* Dynamically change Cookie names and delimiters to enhance the stealth behaviour.
 
 * Logging features.
 
 * Command history per terminal.
 
 * Cluster mode.
+
+* Automate mysql command execution.
