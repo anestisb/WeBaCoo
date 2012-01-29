@@ -1,10 +1,10 @@
 Things TODO for Next Releases:
 
 
-* Single command mode to execute a single command and exit, improving scripting capabilities.
-
-* Logging features.
+* Single command mode: execute single command and exit, improving scripting capabilities.
 
 * Command history per terminal.
 
-* Cluster mode.
+* Cluster mode support for multi targets.
+
+* Expand extension module library.
