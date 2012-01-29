@@ -1,7 +1,15 @@
+Version 0.2.2 [29 January 2012]
+
++ Executed command logging to external file
++ Postgres CLI extension module
++ Upload extension module
+
+
 Version 0.2.1 [23 January 2012]
 
 + MySQL CLI support
 + Support for extension modules
+
 
 Version 0.2 [19 December 2011]
 
