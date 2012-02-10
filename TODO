@@ -8,3 +8,5 @@ Things TODO for Next Releases:
 * Cluster mode support for multi targets.
 
 * Expand extension module library.
+
+* Target enumeration functions.
