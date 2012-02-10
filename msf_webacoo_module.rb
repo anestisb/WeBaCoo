@@ -1,10 +1,3 @@
-##
-# This file is part of the Metasploit Framework and may be subject to
-# redistribution and commercial restrictions. Please see the Metasploit
-# Framework web site for more information on licensing and terms of use.
-# http://metasploit.com/framework/
-##
-
 require 'msf/core'
 
 class Metasploit3 < Msf::Exploit::Remote
@@ -44,7 +37,6 @@ class Metasploit3 < Msf::Exploit::Remote
 							'PayloadType' => 'cmd',
 							'RequiredCmd' => 'generic perl ruby netcat-e bash',
                                                 },
-					'Keys'        => ['php'],
 				},
 			'DisclosureDate' => 'Nov 29 2011',
 			'Targets'        => [ ['Automatic', { }], ],
