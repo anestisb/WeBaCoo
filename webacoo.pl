@@ -849,7 +849,11 @@ sub load_module
 	    # Temporaly change global variables for the POST request
 	    $WEBACOO{http_method} = "POST";
 	    my $tmp_uri = $WEBACOO{uri};
-	    $WEBACOO{uri} = "/".$tmp_fup;
+	    my @uri_segs = $WEBACOO{url}->path_segments();
+	    pop @uri_segs;
+	    push @uri_segs, $tmp_fup;
+	    $WEBACOO{url}->path_segments(@uri_segs);
+	    $WEBACOO{uri} = $WEBACOO{url}->path;
 	    $loaded_module = "upload";
 	    if(defined $args{p} && $args{p} eq "tor") { tor_cmd_request(); }
             else { cmd_request(); }
