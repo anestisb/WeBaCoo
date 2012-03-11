@@ -23,6 +23,7 @@ Any modifications, changes, or alterations to this application is acceptable, ho
 
 Requirements
 ============
+* perl installed
 * liburi-perl
 * libio-socket-socks-perl
 
@@ -50,6 +51,10 @@ Options:
   -t		Establish remote "terminal" connection (-u is required)
 
   -u URL	Backdoor URL
+
+  -e CMD	Single command execution mode (-t and -u are required)
+
+  -m METHOD	HTTP method to be used (default is "GET")
 
   -c C_NAME	Cookie name (default: "M-cookie")
 
@@ -85,6 +90,8 @@ Available extension modules:
 o mysql-cli	MySQL command line module
 o psql-cli	Postgres command line module
 o upload	File upload module using HTTP Post
+o download	File download module using stdout print via 'od' & 'xxd'
+o stealth	Increase stealth module via .htaccess handling
 
 
 Examples
