@@ -1,3 +1,13 @@
+Version 0.2.3 [11 March 2012]
+
++ Single command execution mode (-e flag)
++ Multi HTTP methods suppot (-m flag)
++ Execute external CMDs inside main console
++ Download extension module
++ Stealth extension module
++ Fix color print bug under Windows OS
+
+
 Version 0.2.2 [29 January 2012]
 
 + Executed command logging to external file
