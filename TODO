@@ -1,12 +1,14 @@
 Things TODO for Next Releases:
 
 
-* Single command mode: execute single command and exit, improving scripting capabilities.
+* Implement a rich feature terminal emulator.
 
-* Command history per terminal.
++ Enhance features when running under Windows OS.
 
 * Cluster mode support for multi targets.
 
 * Expand extension module library.
 
 * Target enumeration functions.
+
+* Support for other web frameworks.
